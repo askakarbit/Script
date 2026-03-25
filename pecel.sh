@@ -1,0 +1,21 @@
+#!/bin/bash
+rm -rf prebuilts/clang/host/linux-x86 
+
+repo init -u https://github.com/PixelOS-AOSP/android_manifest.git -b sixteen-qpr2 --git-lfs
+/opt/crave/resync.sh || repo sync
+
+git clone https://github.com/askakarbit/device_xiaomi_courbet.git -b pixelos device/xiaomi/courbet
+git clone https://github.com/meloalfa159/device_xiaomi_sm6150-common.git -b lineage-23 device/xiaomi/sm6150-common
+git clone https://github.com/askakarbit/vendor_xiaomi_courbet.git vendor/xiaomi/courbet
+git clone https://github.com/meloalfa159/vendor_xiaomi_sm6150-common.git -b sedici vendor/xiaomi/sm6150-common
+git clone https://github.com/askakarbit/kernel_xiaomi_sm6150.git kernel/xiaomi/sm6150
+
+git clone https://github.com/AbuRider/android_hardware_xiaomi.git -b lineage-23.2 hardware/xiaomi
+git clone https://github.com/AbuRider/sign.git -b keys2 vendor/lineage-priv/keys
+
+export BUILD_USERNAME=askarbit
+export BUILD_HOSTNAME=karbit
+
+. build/envsetup.sh
+breakfast courbet userdebug
+m pixelos
