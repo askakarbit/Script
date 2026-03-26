@@ -13,6 +13,9 @@ git clone https://github.com/askakarbit/kernel_xiaomi_sm6150.git kernel/xiaomi/s
 git clone https://github.com/AbuRider/android_hardware_xiaomi.git -b lineage-23.2 hardware/xiaomi
 git clone https://github.com/AbuRider/sign.git -b keys2 vendor/lineage-priv/keys
 
+git clone https://gitlab.com/crdroidandroid/android_device_xiaomi_miuicamera -b 16.0-courbet device/xiaomi/miuicamera-sweet
+git clone https://gitlab.com/crdroidandroid/proprietary_vendor_xiaomi_miuicamera -b 16.0-courbet vendor/xiaomi/miuicamera-sweet
+
 export BUILD_USERNAME=askarbit
 export BUILD_HOSTNAME=karbit
 
