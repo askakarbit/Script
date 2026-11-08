@@ -1,0 +1,737 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>M3 Camera - Pro Carousel & Zoom</title>
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@24,400,1,0" rel="stylesheet" />
+    <style>
+        :root {
+            --m3-primary: #FFFFFF;
+            --m3-on-primary: #000000;
+            --m3-text: #FFFFFF;
+            --m3-text-muted: #A0A0A0;
+            --flash-color: #FFD60A;
+            --accent-yellow: #FFD60A;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; user-select: none; -webkit-tap-highlight-color: transparent; }
+
+        body, html {
+            position: absolute; top: 0; bottom: 0; left: 0; right: 0;
+            background-color: #000; color: var(--m3-text);
+            font-family: system-ui, -apple-system, sans-serif;
+            overflow: hidden; perspective: 1000px;
+        }
+
+        #video-wrapper {
+            position: absolute; z-index: 5;
+            background-color: #111; 
+            display: flex; align-items: center; justify-content: center;
+            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            transform-style: preserve-3d;
+            overflow: hidden;
+        }
+
+        @keyframes flipOut { 0% { transform: scale(1) rotateY(0deg); filter: blur(0px); opacity: 1; } 100% { transform: scale(0.8) rotateY(90deg); filter: blur(10px); opacity: 0.3; } }
+        @keyframes flipIn { 0% { transform: scale(0.8) rotateY(-90deg); filter: blur(10px); opacity: 0.3; } 100% { transform: scale(1) rotateY(0deg); filter: blur(0px); opacity: 1; } }
+
+        body.mode-9-16 #video-wrapper, body.mode-full #video-wrapper { top: 0; bottom: 0; left: 0; right: 0; border-radius: 40px; }
+        body.mode-1-1 #video-wrapper { top: 70px; left: 0; width: 100vw; height: 100vw; max-width: 600px; max-height: 600px; margin: 0 auto; border-radius: 36px; }
+        body.mode-3-4 #video-wrapper { top: 60px; bottom: 180px; left: 0; right: 0; width: 100%; height: auto; aspect-ratio: 3 / 4; max-height: calc(100vh - 240px); margin: auto; border-radius: 0px; }
+
+        #camera-feed {
+            width: 100%; height: 100%; object-fit: cover;
+            transform: scale(1.4);
+            transition: transform 0.8s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        .placeholder-text { position: absolute; text-align: center; color: var(--m3-text-muted); font-size: 14px; pointer-events: none; z-index: 6; line-height: 1.5; }
+
+        #brightness-overlay { position: absolute; inset: 0; background: rgba(255, 255, 255, 0.25); mix-blend-mode: screen; opacity: 0; pointer-events: none; transition: opacity 0.3s; z-index: 6; }
+        #brightness-overlay.active { opacity: 1; }
+
+        #ultrawide-overlay { position: absolute; inset: 0; background: radial-gradient(circle, transparent 50%, rgba(0,0,0,0.6) 120%); box-shadow: inset 0 0 15px rgba(0,0,0,0.8); opacity: 0; pointer-events: none; transition: opacity 0.3s; z-index: 7; }
+        .ultrawide-active #ultrawide-overlay { opacity: 1; }
+        .ultrawide-active #camera-feed { filter: contrast(1.05); }
+
+        #freeze-fx { position: absolute; inset: 0; background: #000; opacity: 0; pointer-events: none; z-index: 8; transition: opacity 0.1s; }
+        #freeze-fx.active { opacity: 0.8; }
+        
+        #flash-fx { position: absolute; inset: 0; background: #FFF; opacity: 0; pointer-events: none; z-index: 9; }
+        #flash-fx.active { opacity: 1; transition: opacity 0.05s ease-out; }
+        #flash-fx.fade-out { opacity: 0; transition: opacity 0.3s ease-in; }
+
+        .hide-on-record { transition: opacity 0.3s, visibility 0.3s; }
+        body.is-recording .hide-on-record { opacity: 0 !important; visibility: hidden !important; pointer-events: none !important; }
+
+        #recording-timer {
+            position: absolute; top: 16px; left: 50%; transform: translateX(-50%);
+            background: rgba(0,0,0,0.5); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+            padding: 6px 14px; border-radius: 100px; display: flex; align-items: center; gap: 8px; z-index: 30;
+            opacity: 0; visibility: hidden; transition: all 0.3s;
+        }
+        body.is-recording #recording-timer { opacity: 1; visibility: visible; }
+        .red-dot { width: 8px; height: 8px; background: #FF3B30; border-radius: 50%; animation: blink 1s infinite; }
+        .red-dot.paused { animation: none; opacity: 0.5; }
+        @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+        #timer-text { font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; }
+
+        #top-bar { position: absolute; top: 0; left: 0; right: 0; height: 60px; z-index: 20; display: flex; justify-content: space-between; align-items: center; padding: 0 16px; transition: background 0.3s, backdrop-filter 0.3s; }
+        #bottom-controls { position: absolute; bottom: 0; left: 0; right: 0; height: 180px; z-index: 20; display: flex; flex-direction: column; padding-bottom: 24px; transition: background 0.3s, backdrop-filter 0.3s; }
+
+        body.mode-9-16 #top-bar, body.mode-full #top-bar { background: rgba(0,0,0,0.15); backdrop-filter: blur(15px); -webkit-backdrop-filter: blur(15px); }
+        body.mode-9-16 #bottom-controls, body.mode-full #bottom-controls { background: rgba(0,0,0,0.3); backdrop-filter: blur(15px); -webkit-backdrop-filter: blur(15px); }
+        body.mode-1-1 #top-bar, body.mode-1-1 #bottom-controls, body.mode-3-4 #top-bar, body.mode-3-4 #bottom-controls { background: #000; backdrop-filter: none; -webkit-backdrop-filter: none; }
+
+        .top-left, .top-right { display: flex; gap: 8px; align-items: center; z-index: 2; }
+        .center-arrow { position: absolute; left: 50%; transform: translateX(-50%); background: rgba(255,255,255,0.15); width: 40px; height: 40px; z-index: 1; }
+        
+        .icon-btn { background: none; border: none; color: var(--m3-text); display: flex; align-items: center; justify-content: center; cursor: pointer; padding: 6px; border-radius: 50%; transition: 0.2s; }
+        .icon-btn:active { background: rgba(255,255,255,0.2); }
+        
+        .res-dummy { background: rgba(255,255,255,0.15); border: none; color: var(--m3-text); font-size: 13px; font-weight: 600; padding: 6px 10px; border-radius: 8px; cursor: pointer; }
+        #mp-btn.front-hidden { display: none !important; }
+        #photo-tools { display: flex; gap: 4px; transition: opacity 0.3s; }
+
+        /* --- ZOOM CONTROLS --- */
+        #zoom-controls-wrapper {
+            position: absolute; bottom: 200px; left: 50%; transform: translateX(-50%); z-index: 20;
+            display: flex; flex-direction: column; align-items: center; gap: 12px; transition: opacity 0.3s;
+        }
+        body.mode-1-1 #zoom-controls-wrapper, body.mode-3-4 #zoom-controls-wrapper { bottom: 200px; }
+
+        #zoom-wheel-bar {
+            background: rgba(0, 0, 0, 0.85); backdrop-filter: blur(12px);
+            padding: 10px 16px; border-radius: 16px; display: flex; flex-direction: column; align-items: center; gap: 6px;
+            opacity: 0; visibility: hidden; transition: opacity 0.2s ease, transform 0.2s ease; transform: translateY(10px);
+            touch-action: none; cursor: ew-resize;
+        }
+        #zoom-wheel-bar.active { opacity: 1; visibility: visible; transform: translateY(0); }
+        
+        #zoom-indicator-text { color: var(--accent-yellow); font-size: 15px; font-weight: 700; }
+        
+        .wheel-ticks {
+            display: flex; align-items: center; gap: 6px; width: 200px; overflow: hidden; justify-content: center; position: relative;
+            height: 30px; pointer-events: none;
+        }
+        .tick { width: 2px; background: rgba(255,255,255,0.4); border-radius: 1px; }
+        .tick.major { height: 18px; background: #FFF; }
+        .tick.minor { height: 10px; }
+        .tick-center-line {
+            position: absolute; top: 0; bottom: 0; width: 2px; background: var(--accent-yellow); z-index: 2;
+        }
+
+        #zoom-pills {
+            display: flex; gap: 12px; background: rgba(0, 0, 0, 0.5); backdrop-filter: blur(10px);
+            padding: 8px 16px; border-radius: 100px;
+        }
+        .zoom-btn { background: none; border: none; color: var(--m3-text-muted); font-size: 14px; font-weight: 600; width: 36px; height: 36px; border-radius: 50%; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s; }
+        .zoom-btn.active { background: var(--m3-primary); color: var(--m3-on-primary); }
+        .zoom-btn.front-hidden { display: none !important; }
+
+        /* --- MODE CAROUSEL ANIMATION --- */
+        .tab-wrapper { position: relative; height: 50px; width: 100%; display: flex; justify-content: center; align-items: center; overflow: hidden; }
+        .tab-layer { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; gap: 12px; transition: opacity 0.3s, visibility 0.3s; }
+        .tab-layer.hidden { opacity: 0; visibility: hidden; pointer-events: none; }
+
+        .mode-carousel {
+            display: flex; gap: 24px; align-items: center; position: absolute;
+            transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+            will-change: transform; cursor: grab;
+        }
+        .mode-text {
+            color: var(--m3-text-muted); font-size: 13px; font-weight: 600; letter-spacing: 1px; padding: 6px 14px; border-radius: 100px; cursor: pointer;
+            transition: color 0.3s, background-color 0.3s, transform 0.3s; white-space: nowrap;
+        }
+        .mode-text.active { color: var(--m3-on-primary); background: var(--m3-primary); transform: scale(1.05); }
+
+        .ratio-chip { background: rgba(255,255,255,0.15); color: var(--m3-text); border: none; padding: 8px 12px; border-radius: 100px; font-size: 13px; font-weight: 600; cursor: pointer; transition: transform 0.2s; }
+        .ratio-chip.active { background: var(--m3-primary); color: var(--m3-on-primary); transform: scale(1.05); }
+        .disabled-text { color: var(--m3-text-muted); font-size: 13px; font-weight: 500; }
+
+        .shutter-row { flex: 1; display: flex; justify-content: space-around; align-items: center; padding: 0 24px; width: 100%; }
+
+        .gallery-btn-wrapper { width: 52px; height: 52px; border-radius: 14px; background: rgba(255,255,255,0.15); display: flex; align-items: center; justify-content: center; cursor: pointer; overflow: hidden; position: relative; }
+        #gallery-thumbnail { width: 100%; height: 100%; object-fit: cover; display: none; z-index: 2; position: absolute; top:0; left:0; }
+        #gallery-icon { position: absolute; z-index: 1; }
+        #video-upload { display: none; }
+
+        .shutter-btn-container { width: 72px; height: 72px; border-radius: 50%; background: transparent; border: 4px solid rgba(255,255,255,0.5); display: flex; align-items: center; justify-content: center; cursor: pointer; }
+        .shutter-btn { width: 56px; height: 56px; border-radius: 50%; background: var(--m3-primary); transition: all 0.2s; }
+        .shutter-btn.video-mode { background: #FF3B30; }
+        .shutter-btn.recording { width: 32px; height: 32px; border-radius: 8px; }
+        .shutter-btn-container:active .shutter-btn:not(.recording) { transform: scale(0.9); }
+
+        .right-action-wrapper { position: relative; width: 52px; height: 52px; }
+        #flip-btn { position: absolute; inset: 0; width: 100%; height: 100%; background: rgba(255,255,255,0.15); transition: opacity 0.3s; border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer; border: none; color: #FFF; }
+        #pause-btn { position: absolute; inset: 0; width: 100%; height: 100%; background: rgba(255,255,255,0.15); opacity: 0; pointer-events: none; transition: opacity 0.3s; border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer; border: none; color: #FFF; }
+        
+        body.is-recording #flip-btn { opacity: 0; pointer-events: none; }
+        body.is-recording #pause-btn { opacity: 1; pointer-events: auto; }
+    </style>
+</head>
+<body class="mode-9-16">
+
+    <div id="recording-timer">
+        <div class="red-dot" id="timer-dot"></div>
+        <span id="timer-text">00:00</span>
+    </div>
+
+    <div id="video-wrapper">
+        <div class="placeholder-text" id="placeholder">Klik Galeri di Kiri Bawah<br>Untuk Video Kamera Belakang</div>
+        <video id="camera-feed" autoplay loop muted playsinline crossorigin="anonymous"></video>
+        <div id="brightness-overlay"></div>
+        <div id="ultrawide-overlay"></div>
+        <div id="freeze-fx"></div>
+        <div id="flash-fx"></div>
+    </div>
+
+    <!-- ZOOM CONTROLS & SLIDER WHEEL -->
+    <div id="zoom-controls-wrapper">
+        <div id="zoom-wheel-bar">
+            <span id="zoom-indicator-text">1.0x</span>
+            <div class="wheel-ticks" id="wheel-ticks">
+                <div class="tick-center-line"></div>
+            </div>
+        </div>
+
+        <div id="zoom-pills">
+            <button class="zoom-btn" data-scale="1.0" data-visual="0.7" id="btn-zoom-ultra">.7</button>
+            <button class="zoom-btn active" data-scale="1.4" data-visual="1">1</button>
+            <button class="zoom-btn zoom-extra" data-scale="2.8" data-visual="2">2</button>
+            <button class="zoom-btn zoom-extra" data-scale="4.2" data-visual="3">3</button>
+        </div>
+    </div>
+
+    <!-- UI ATAS -->
+    <div id="top-bar" class="hide-on-record">
+        <div class="top-left">
+            <button class="icon-btn" id="flash-btn">
+                <span class="material-symbols-rounded" id="flash-icon">flash_off</span>
+            </button>
+            <button id="mp-btn" class="res-dummy">12MP</button>
+        </div>
+
+        <button class="icon-btn center-arrow" id="arrow-btn">
+            <span class="material-symbols-rounded" id="arrow-icon">keyboard_arrow_up</span>
+        </button>
+        
+        <div class="top-right">
+            <div id="photo-tools">
+                <button class="icon-btn"><span class="material-symbols-rounded">motion_photos_on</span></button>
+                <button class="icon-btn"><span class="material-symbols-rounded">filter_b_and_w</span></button>
+                <button class="icon-btn"><span class="material-symbols-rounded">settings</span></button>
+            </div>
+            <button id="res-btn" class="res-dummy" style="display:none;">4K • 60</button>
+        </div>
+    </div>
+
+    <!-- UI BAWAH -->
+    <div id="bottom-controls">
+        <div class="tab-wrapper hide-on-record">
+            <div id="settings-panel" class="tab-layer hidden">
+                <div id="ratio-controls" style="display: flex; gap: 8px;">
+                    <button class="ratio-chip" data-ratio="mode-1-1">1:1</button>
+                    <button class="ratio-chip" data-ratio="mode-3-4">3:4</button>
+                    <button class="ratio-chip active" data-ratio="mode-9-16">9:16</button>
+                    <button class="ratio-chip" data-ratio="mode-full">FULL</button>
+                </div>
+                <div id="video-lock-text" class="disabled-text" style="display: none;">Rasio Terkunci di 9:16</div>
+            </div>
+            
+            <!-- CAROUSEL MODE KAMERA -->
+            <div id="mode-selector" class="tab-layer">
+                <div class="mode-carousel" id="mode-carousel">
+                    <span class="mode-text" data-mode="CINEMATIC">CINEMATIC</span>
+                    <span class="mode-text" data-mode="VIDEO">VIDEO</span>
+                    <span class="mode-text active" data-mode="PHOTO">PHOTO</span>
+                    <span class="mode-text" data-mode="PORTRAIT">PORTRAIT</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="shutter-row">
+            <div class="hide-on-record">
+                <label class="gallery-btn-wrapper" for="video-upload" title="Ubah Video">
+                    <span class="material-symbols-rounded" id="gallery-icon" style="color: var(--m3-text-muted);">photo_library</span>
+                    <img id="gallery-thumbnail" src="" alt="Thumbnail">
+                </label>
+                <input type="file" id="video-upload" accept="video/*">
+            </div>
+
+            <div class="shutter-btn-container" id="shutter-wrapper">
+                <div class="shutter-btn" id="shutter-btn"></div>
+            </div>
+
+            <div class="right-action-wrapper">
+                <button id="flip-btn"><span class="material-symbols-rounded">flip_camera_ios</span></button>
+                <button id="pause-btn"><span class="material-symbols-rounded" id="pause-icon">pause</span></button>
+            </div>
+        </div>
+    </div>
+    
+    <canvas id="capture-canvas" style="display: none;"></canvas>
+
+    <script>
+        (function() {
+            const body = document.body;
+            const videoElement = document.getElementById('camera-feed');
+            const fileInput = document.getElementById('video-upload');
+            const placeholder = document.getElementById('placeholder');
+            const videoWrapper = document.getElementById('video-wrapper');
+            const zoomBtns = document.querySelectorAll('.zoom-btn');
+            const zoomExtraBtns = document.querySelectorAll('.zoom-extra');
+            const btnZoomUltra = document.getElementById('btn-zoom-ultra');
+            
+            const zoomWheelBar = document.getElementById('zoom-wheel-bar');
+            const zoomIndicatorText = document.getElementById('zoom-indicator-text');
+            const wheelTicks = document.getElementById('wheel-ticks');
+            
+            const brightnessOverlay = document.getElementById('brightness-overlay');
+            const freezeFx = document.getElementById('freeze-fx');
+            const flashFx = document.getElementById('flash-fx');
+            
+            const arrowBtn = document.getElementById('arrow-btn');
+            const arrowIcon = document.getElementById('arrow-icon');
+            const settingsPanel = document.getElementById('settings-panel');
+            const modeSelector = document.getElementById('mode-selector');
+            const modeCarousel = document.getElementById('mode-carousel');
+            const modeTexts = document.querySelectorAll('.mode-text');
+            const ratioChips = document.querySelectorAll('.ratio-chip');
+            
+            const flashBtn = document.getElementById('flash-btn');
+            const flashIcon = document.getElementById('flash-icon');
+            const mpBtn = document.getElementById('mp-btn');
+            const photoTools = document.getElementById('photo-tools');
+            const resBtn = document.getElementById('res-btn');
+            
+            const shutterWrapper = document.getElementById('shutter-wrapper');
+            const shutterBtn = document.getElementById('shutter-btn');
+            const flipBtn = document.getElementById('flip-btn');
+            const pauseBtn = document.getElementById('pause-btn');
+            const pauseIcon = document.getElementById('pause-icon');
+            const ratioControls = document.getElementById('ratio-controls');
+            const videoLockText = document.getElementById('video-lock-text');
+            
+            const timerText = document.getElementById('timer-text');
+            const timerDot = document.getElementById('timer-dot');
+            
+            const galleryIcon = document.getElementById('gallery-icon');
+            const galleryThumbnail = document.getElementById('gallery-thumbnail');
+            const captureCanvas = document.getElementById('capture-canvas');
+            const ctx = captureCanvas.getContext('2d', { willReadFrequently: true });
+
+            let currentMode = 'PHOTO';
+            let isSettingsOpen = false;
+            let selectedPhotoRatio = 'mode-9-16';
+            
+            let isFrontCamera = false;
+            let backVideoUrl = null;
+            let frontVideoUrl = null;
+            
+            let isRecording = false;
+            let isPaused = false;
+            let timerInterval;
+            let recordSeconds = 0;
+            let isFlashOn = false;
+
+            // Generate Ticks untuk Zoom Wheel Bar
+            for(let i=0; i<30; i++) {
+                const tick = document.createElement('div');
+                tick.className = `tick ${i % 5 === 0 ? 'major' : 'minor'}`;
+                wheelTicks.appendChild(tick);
+            }
+
+            let pressTimer;
+            let activeZoomValue = 1.4;
+
+            function applyZoomDirect(scale, visualStr) {
+                const mirror = isFrontCamera ? 'scaleX(-1)' : 'scaleX(1)';
+                videoElement.style.transform = `scale(${scale}) ${mirror}`;
+                activeZoomValue = scale;
+                zoomIndicatorText.innerText = `${visualStr}x`;
+
+                if (visualStr === '0.7' || visualStr === '.8' || visualStr === '0.8') videoWrapper.classList.add('ultrawide-active');
+                else videoWrapper.classList.remove('ultrawide-active');
+
+                zoomBtns.forEach(b => {
+                    const bVal = b.getAttribute('data-visual');
+                    if(bVal === visualStr || (isFrontCamera && (visualStr === '.8' || visualStr === '0.8') && (bVal === '.8' || bVal === '0.8'))) {
+                        b.classList.add('active');
+                    } else {
+                        b.classList.remove('active');
+                    }
+                });
+            }
+
+            // --- INTERAKSI SLIDER / ZOOM WHEEL ---
+            let isDraggingWheel = false;
+            let startX = 0;
+            let startScale = 1.4;
+
+            zoomWheelBar.addEventListener('mousedown', (e) => {
+                isDraggingWheel = true;
+                startX = e.clientX;
+                startScale = activeZoomValue;
+                e.preventDefault();
+            });
+            zoomWheelBar.addEventListener('touchstart', (e) => {
+                isDraggingWheel = true;
+                startX = e.touches[0].clientX;
+                startScale = activeZoomValue;
+            }, {passive: true});
+
+            window.addEventListener('mousemove', (e) => {
+                if(!isDraggingWheel) return;
+                const deltaX = e.clientX - startX;
+                let newScale = startScale - (deltaX * 0.008);
+                newScale = Math.max(1.0, Math.min(newScale, 5.0));
+                let visualVal = (newScale / 1.4).toFixed(1);
+                applyZoomDirect(newScale, visualVal);
+            });
+            window.addEventListener('touchmove', (e) => {
+                if(!isDraggingWheel) return;
+                const deltaX = e.touches[0].clientX - startX;
+                let newScale = startScale - (deltaX * 0.008);
+                newScale = Math.max(1.0, Math.min(newScale, 5.0));
+                let visualVal = (newScale / 1.4).toFixed(1);
+                applyZoomDirect(newScale, visualVal);
+            }, {passive: true});
+
+            const stopDragWheel = () => { isDraggingWheel = false; };
+            window.addEventListener('mouseup', stopDragWheel);
+            window.addEventListener('touchend', stopDragWheel);
+
+            // Tombol Zoom Pill
+            zoomBtns.forEach(btn => {
+                const s = parseFloat(btn.getAttribute('data-scale'));
+                const v = btn.getAttribute('data-visual');
+
+                btn.addEventListener('click', (e) => {
+                    applyZoomDirect(s, v);
+                });
+
+                btn.addEventListener('mousedown', () => {
+                    pressTimer = setTimeout(() => { zoomWheelBar.classList.add('active'); }, 400);
+                });
+                btn.addEventListener('touchstart', () => {
+                    pressTimer = setTimeout(() => { zoomWheelBar.classList.add('active'); }, 400);
+                });
+
+                const cancelPress = () => { clearTimeout(pressTimer); };
+                btn.addEventListener('mouseup', cancelPress);
+                btn.addEventListener('mouseleave', cancelPress);
+                btn.addEventListener('touchend', cancelPress);
+            });
+
+            document.addEventListener('mouseup', (e) => { 
+                if(!zoomWheelBar.contains(e.target)) zoomWheelBar.classList.remove('active'); 
+            });
+
+            // FUNGSI CAROUSEL MODE (Geser & Center Active Mode)
+            function updateCarouselCenter(activeElement) {
+                const containerWidth = modeSelector.clientWidth;
+                const elementCenter = activeElement.offsetLeft + activeElement.offsetWidth / 2;
+                const offset = containerWidth / 2 - elementCenter;
+                modeCarousel.style.transform = `translateX(${offset}px)`;
+            }
+
+            // Drag / Swipe Carousel
+            let isDraggingCarousel = false;
+            let carouselStartX = 0;
+            let currentTranslateX = 0;
+
+            modeCarousel.addEventListener('mousedown', (e) => {
+                isDraggingCarousel = true;
+                carouselStartX = e.clientX;
+                const matrix = window.getComputedStyle(modeCarousel).transform;
+                if(matrix !== 'none') {
+                    currentTranslateX = parseFloat(matrix.split(',')[4]);
+                }
+                modeCarousel.style.transition = 'none';
+            });
+
+            window.addEventListener('mousemove', (e) => {
+                if(!isDraggingCarousel) return;
+                const deltaX = e.clientX - carouselStartX;
+                modeCarousel.style.transform = `translateX(${currentTranslateX + deltaX}px)`;
+            });
+
+            window.addEventListener('mouseup', () => {
+                if(!isDraggingCarousel) return;
+                isDraggingCarousel = false;
+                modeCarousel.style.transition = 'transform 0.4s cubic-bezier(0.16, 1, 0.3, 1)';
+                updateCarouselCenter(modeCarousel.querySelector('.mode-text.active'));
+            });
+
+            // Touch support untuk carousel
+            modeCarousel.addEventListener('touchstart', (e) => {
+                isDraggingCarousel = true;
+                carouselStartX = e.touches[0].clientX;
+                const matrix = window.getComputedStyle(modeCarousel).transform;
+                if(matrix !== 'none') {
+                    currentTranslateX = parseFloat(matrix.split(',')[4]);
+                }
+                modeCarousel.style.transition = 'none';
+            }, {passive: true});
+
+            window.addEventListener('touchmove', (e) => {
+                if(!isDraggingCarousel) return;
+                const deltaX = e.touches[0].clientX - carouselStartX;
+                modeCarousel.style.transform = `translateX(${currentTranslateX + deltaX}px)`;
+            }, {passive: true});
+
+            window.addEventListener('touchend', () => {
+                if(!isDraggingCarousel) return;
+                isDraggingCarousel = false;
+                modeCarousel.style.transition = 'transform 0.4s cubic-bezier(0.16, 1, 0.3, 1)';
+                updateCarouselCenter(modeCarousel.querySelector('.mode-text.active'));
+            });
+
+            // Inisialisasi posisi center carousel saat load
+            window.addEventListener('load', () => {
+                updateCarouselCenter(document.querySelector('.mode-text.active'));
+            });
+
+            // FUNGSI FLASHLIGHT
+            flashBtn.addEventListener('click', () => {
+                isFlashOn = !isFlashOn;
+                if (isFlashOn) {
+                    flashIcon.innerText = 'flash_on';
+                    flashIcon.style.color = 'var(--flash-color)';
+                    brightnessOverlay.classList.add('active');
+                } else {
+                    flashIcon.innerText = 'flash_off';
+                    flashIcon.style.color = '';
+                    brightnessOverlay.classList.remove('active');
+                }
+            });
+
+            // FUNGSI MEGAPIXEL DUMMY
+            const mpOptions = ['8MP', '12MP', '24MP'];
+            let mpIndex = 1;
+            mpBtn.addEventListener('click', () => {
+                triggerFreeze();
+                mpIndex = (mpIndex + 1) % mpOptions.length;
+                mpBtn.innerText = mpOptions[mpIndex];
+            });
+
+            // FUNGSI FLIP KAMERA DENGAN ANIMASI 3D
+            flipBtn.addEventListener('click', () => {
+                videoWrapper.style.animation = 'flipOut 0.25s ease-in forwards';
+                setTimeout(() => {
+                    isFrontCamera = !isFrontCamera;
+                    const activeUrl = isFrontCamera ? frontVideoUrl : backVideoUrl;
+                    
+                    if (activeUrl) {
+                        videoElement.src = activeUrl;
+                        placeholder.style.display = 'none';
+                        videoElement.play().catch(e=>console.log(e));
+                    } else {
+                        videoElement.removeAttribute('src');
+                        videoElement.load();
+                        placeholder.style.display = 'block';
+                        placeholder.innerHTML = isFrontCamera 
+                            ? "Klik Galeri di Kiri Bawah<br>Untuk Video Kamera <b>Depan</b>" 
+                            : "Klik Galeri di Kiri Bawah<br>Untuk Video Kamera <b>Belakang</b>";
+                    }
+
+                    if (isFrontCamera) {
+                        mpBtn.classList.add('front-hidden');
+                        btnZoomUltra.innerText = '.8';
+                        btnZoomUltra.setAttribute('data-visual', '.8');
+                        btnZoomUltra.setAttribute('data-scale', '1.2');
+                    } else {
+                        mpBtn.classList.remove('front-hidden');
+                        btnZoomUltra.innerText = '.7';
+                        btnZoomUltra.setAttribute('data-visual', '0.7');
+                        btnZoomUltra.setAttribute('data-scale', '1.0');
+                    }
+
+                    zoomExtraBtns.forEach(btn => {
+                        if (isFrontCamera) btn.classList.add('front-hidden');
+                        else btn.classList.remove('front-hidden');
+                    });
+
+                    applyZoomDirect(1.4, '1');
+
+                    videoWrapper.style.animation = 'flipIn 0.25s ease-out forwards';
+                    setTimeout(() => { videoWrapper.style.animation = ''; }, 260);
+                }, 250);
+            });
+
+            fileInput.addEventListener('change', function(event) {
+                const file = event.target.files[0];
+                if (file) {
+                    const newUrl = URL.createObjectURL(file);
+                    if (isFrontCamera) frontVideoUrl = newUrl; else backVideoUrl = newUrl;
+
+                    videoElement.src = newUrl;
+                    placeholder.style.display = 'none';
+                    videoElement.play().catch(e => console.log(e));
+                }
+                event.target.value = ''; 
+            });
+
+            function updateTimerUI() {
+                let m = Math.floor(recordSeconds / 60).toString().padStart(2, '0');
+                let s = (recordSeconds % 60).toString().padStart(2, '0');
+                timerText.innerText = `${m}:${s}`;
+            }
+
+            function startTimer() {
+                recordSeconds = 0; updateTimerUI();
+                timerDot.classList.remove('paused');
+                timerInterval = setInterval(() => {
+                    if(!isPaused) { recordSeconds++; updateTimerUI(); }
+                }, 1000);
+            }
+
+            function stopTimer() {
+                clearInterval(timerInterval);
+                timerText.innerText = "00:00";
+            }
+
+            function captureThumbnail() {
+                if (videoElement.readyState >= 2 && !placeholder.style.display) {
+                    try {
+                        captureCanvas.width = 150; captureCanvas.height = 150;
+                        const vW = videoElement.videoWidth; const vH = videoElement.videoHeight;
+                        const minDim = Math.min(vW, vH);
+                        const sX = (vW - minDim) / 2; const sY = (vH - minDim) / 2;
+                        
+                        ctx.save();
+                        if(isFrontCamera) { ctx.translate(150, 0); ctx.scale(-1, 1); }
+                        ctx.drawImage(videoElement, sX, sY, minDim, minDim, 0, 0, 150, 150);
+                        if(isFlashOn) {
+                            ctx.fillStyle = "rgba(255, 255, 255, 0.25)";
+                            ctx.fillRect(0, 0, 150, 150);
+                        }
+                        ctx.restore();
+
+                        galleryThumbnail.src = captureCanvas.toDataURL('image/jpeg');
+                        galleryThumbnail.style.display = 'block';
+                        galleryIcon.style.display = 'none';
+                    } catch(e) { console.log("Gagal memuat thumbnail."); }
+                }
+            }
+
+            function triggerFreeze() {
+                freezeFx.classList.add('active');
+                setTimeout(() => { freezeFx.classList.remove('active'); }, 150);
+            }
+
+            arrowBtn.addEventListener('click', () => {
+                isSettingsOpen = !isSettingsOpen;
+                if (isSettingsOpen) {
+                    modeSelector.classList.add('hidden');
+                    settingsPanel.classList.remove('hidden');
+                    arrowIcon.innerText = 'keyboard_arrow_down';
+                } else {
+                    settingsPanel.classList.add('hidden');
+                    modeSelector.classList.remove('hidden');
+                    arrowIcon.innerText = 'keyboard_arrow_up';
+                }
+            });
+
+            modeTexts.forEach(mode => {
+                mode.addEventListener('click', () => {
+                    const newMode = mode.dataset.mode;
+                    if (newMode === currentMode) return;
+                    triggerFreeze();
+                    currentMode = newMode;
+                    if(isRecording) stopRecording();
+
+                    modeTexts.forEach(m => m.classList.remove('active'));
+                    mode.classList.add('active');
+
+                    // Geser carousel ke tengah mode yang dipilih
+                    updateCarouselCenter(mode);
+
+                    if (newMode === 'VIDEO' || newMode === 'CINEMATIC') {
+                        body.className = 'mode-9-16';
+                        resBtn.style.display = 'block';
+                        mpBtn.style.display = 'none';
+                        photoTools.style.display = 'none';
+                        shutterBtn.classList.add('video-mode');
+                        ratioControls.style.display = 'none';
+                        videoLockText.style.display = 'block';
+                    } else {
+                        body.className = selectedPhotoRatio;
+                        resBtn.style.display = 'none';
+                        if(!isFrontCamera) mpBtn.style.display = 'block';
+                        photoTools.style.display = 'flex';
+                        shutterBtn.classList.remove('video-mode');
+                        ratioControls.style.display = 'flex';
+                        videoLockText.style.display = 'none';
+                    }
+                });
+            });
+
+            ratioChips.forEach(chip => {
+                chip.addEventListener('click', () => {
+                    if (currentMode === 'VIDEO' || currentMode === 'CINEMATIC') return;
+                    triggerFreeze();
+                    selectedPhotoRatio = chip.dataset.ratio;
+                    body.className = selectedPhotoRatio;
+
+                    ratioChips.forEach(c => c.classList.remove('active'));
+                    chip.classList.add('active');
+                });
+            });
+
+            const resolutions = ['4K • 60', '4K • 30', 'HD • 60', 'HD • 30'];
+            let resIndex = 0;
+            resBtn.addEventListener('click', () => {
+                triggerFreeze();
+                resIndex = (resIndex + 1) % resolutions.length;
+                resBtn.innerText = resolutions[resIndex];
+            });
+
+            pauseBtn.addEventListener('click', () => {
+                isPaused = !isPaused;
+                if(isPaused) {
+                    pauseIcon.innerText = 'play_arrow';
+                    timerDot.classList.add('paused');
+                } else {
+                    pauseIcon.innerText = 'pause';
+                    timerDot.classList.remove('paused');
+                }
+            });
+
+            function stopRecording() {
+                isRecording = false; isPaused = false;
+                body.classList.remove('is-recording');
+                shutterBtn.classList.remove('recording');
+                pauseIcon.innerText = 'pause';
+                stopTimer();
+                captureThumbnail();
+            }
+
+            shutterWrapper.addEventListener('click', () => {
+                if (currentMode === 'PHOTO' || currentMode === 'PORTRAIT') {
+                    flashFx.classList.remove('fade-out');
+                    flashFx.classList.add('active');
+                    setTimeout(() => captureThumbnail(), 50);
+                    setTimeout(() => {
+                        flashFx.classList.remove('active');
+                        flashFx.classList.add('fade-out');
+                    }, 50);
+                } else if (currentMode === 'VIDEO' || currentMode === 'CINEMATIC') {
+                    if (!isRecording) {
+                        isRecording = true; isPaused = false;
+                        body.classList.add('is-recording');
+                        shutterBtn.classList.add('recording');
+                        pauseIcon.innerText = 'pause';
+                        videoElement.play().catch(e=>console.log(e));
+                        startTimer();
+                    } else {
+                        stopRecording();
+                    }
+                }
+            });
+        })();
+    </script>
+</body>
+</html>
